@@ -4,13 +4,13 @@ from discord.ext import commands
 import google.generativeai as genai
 import requests
 import io
-import base64
 from keep_alive import keep_alive
 import time
 
 # --- CẤU HÌNH ---
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+CLIPDROP_API_KEY = os.environ.get("CLIPDROP_API_KEY")
 
 # Cấu hình Gemini
 genai.configure(api_key=GEMINI_API_KEY)
@@ -21,109 +21,72 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-def upscale_to_4k(image_data):
-    """Sử dụng các dịch vụ upscale miễn phí để lên 4K"""
+def upscale_with_clipdrop(image_data):
+    """Sử dụng Clipdrop API để upscale ảnh lên 4K"""
     try:
-        # Thử Upscale.media đầu tiên (hỗ trợ 4K)
-        url = "https://api.upscale.media/api/v1/upscale"
-        files = {"image": ("image.png", image_data, "image/png")}
-        data = {"mode": "high_quality", "scale": "4"}  # 4x scale cho 4K
+        print("🔄 Đang upscale với Clipdrop...")
         
-        response = requests.post(url, files=files, data=data, timeout=60)
+        # Clipdrop Upscale API
+        url = "https://clipdrop-api.co/upscale/v1"
         
-        if response.status_code == 200:
-            result = response.json()
-            if result.get("success"):
-                download_url = result["data"]["url"]
-                img_response = requests.get(download_url, timeout=30)
-                if img_response.status_code == 200:
-                    print("✅ Upscale.media thành công - 4K")
-                    return img_response.content
-        
-        # Thử phương pháp thứ 2: BigJPEG 2x + resize
-        print("🔄 Thử BigJPEG...")
-        api_url = "https://api.bigjpg.com/api/task/"
-        
-        response = requests.post(api_url, data={
-            "style": "art",
-            "noise": "3", 
-            "x2": "2",
-            "input": base64.b64encode(image_data).decode()
-        }, headers={"Content-Type": "application/json"}, timeout=30)
-        
-        if response.status_code == 200:
-            task_data = response.json()
-            task_id = task_data.get("tid")
-            
-            if task_id:
-                for i in range(40):  # Chờ lâu hơn cho 4K
-                    time.sleep(3)
-                    status_response = requests.get(f"{api_url}{task_id}", timeout=10)
-                    if status_response.status_code == 200:
-                        status_data = status_response.json()
-                        if status_data.get("status") == "success":
-                            image_url = status_data.get("url")
-                            if image_url:
-                                img_response = requests.get(image_url, timeout=30)
-                                if img_response.status_code == 200:
-                                    print("✅ BigJPEG thành công - 2K")
-                                    # Thử upscale thêm lần nữa để lên 4K
-                                    return upscale_again(img_response.content)
-        
-        # Phương pháp cuối: Let's Enhance
-        print("🔄 Thử Let's Enhance...")
-        return try_lets_enhance(image_data)
-        
-    except Exception as e:
-        print(f"❌ Lỗi upscale 4K: {e}")
-        return None
-
-def upscale_again(image_data):
-    """Upscale lần thứ 2 để đạt 4K"""
-    try:
-        url = "https://api.upscale.media/api/v1/upscale"
-        files = {"image": ("image2.png", image_data, "image/png")}
-        data = {"mode": "high_quality", "scale": "2"}
-        
-        response = requests.post(url, files=files, data=data, timeout=60)
-        if response.status_code == 200:
-            result = response.json()
-            if result.get("success"):
-                download_url = result["data"]["url"]
-                img_response = requests.get(download_url, timeout=30)
-                if img_response.status_code == 200:
-                    print("✅ Upscale lần 2 thành công - 4K")
-                    return img_response.content
-    except Exception as e:
-        print(f"❌ Lỗi upscale lần 2: {e}")
-    return None
-
-def try_lets_enhance(image_data):
-    """Thử Let's Enhance API"""
-    try:
-        # Let's Enhance có chất lượng rất tốt cho 4K
-        url = "https://api.letsenhance.ai/v1/upscale"
-        headers = {
-            "X-API-Key": "letsenhance-free"  # Key miễn phí
+        files = {
+            'image_file': ('image.png', image_data, 'image/png')
         }
         
-        files = {"image": image_data}
+        headers = {
+            'x-api-key': CLIPDROP_API_KEY
+        }
+        
         response = requests.post(url, files=files, headers=headers, timeout=60)
         
         if response.status_code == 200:
-            result = response.json()
-            if result.get("output_url"):
-                img_response = requests.get(result["output_url"], timeout=30)
-                if img_response.status_code == 200:
-                    print("✅ Let's Enhance thành công - 4K")
-                    return img_response.content
+            print("✅ Clipdrop upscale thành công - 4K")
+            return response.content
+        else:
+            print(f"❌ Clipdrop lỗi: {response.status_code} - {response.text}")
+            return None
+            
     except Exception as e:
-        print(f"❌ Lỗi Let's Enhance: {e}")
-    return None
+        print(f"❌ Lỗi Clipdrop: {e}")
+        return None
+
+def upscale_with_clipdrop_sr(image_data):
+    """Sử dụng Clipdrop Super Resolution nếu upscale thông thường không hoạt động"""
+    try:
+        print("🔄 Thử Clipdrop Super Resolution...")
+        
+        url = "https://clipdrop-api.co/image-upscaling/v1/upscale"
+        
+        files = {
+            'image': ('image.png', image_data, 'image/png')
+        }
+        
+        headers = {
+            'x-api-key': CLIPDROP_API_KEY
+        }
+        
+        # Thêm parameters cho chất lượng cao
+        data = {
+            'width': 4096,
+            'height': 4096
+        }
+        
+        response = requests.post(url, files=files, headers=headers, data=data, timeout=60)
+        
+        if response.status_code == 200:
+            print("✅ Clipdrop Super Resolution thành công - 4K")
+            return response.content
+        else:
+            print(f"❌ Clipdrop SR lỗi: {response.status_code} - {response.text}")
+            return None
+            
+    except Exception as e:
+        print(f"❌ Lỗi Clipdrop SR: {e}")
+        return None
 
 @bot.event
 async def on_ready():
-    print(f'Bot {bot.user} đã sẵn sàng (Chế độ Free 100%)!')
+    print(f'Bot {bot.user} đã sẵn sàng!')
     await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="!ve + ý tưởng"))
 
 @bot.command(name="ve")
@@ -131,10 +94,10 @@ async def draw_image(ctx, *, prompt: str):
     """Lệnh vẽ: !ve mô tả"""
     
     # Thông báo đang xử lý
-    msg = await ctx.send(f"🎨 **AI** đang sáng tạo: '{prompt}'... (Có thể mất 1-2 phút)")
+    msg = await ctx.send(f"🎨 **AI** đang sáng tạo: '{prompt}'...")
 
     try:
-        # BƯỚC 1: Dùng Gemini để viết Prompt tiếng Anh xịn
+        # BƯỚC 1: Dùng Gemini để viết Prompt tiếng Anh
         response = model.generate_content(
             f"Hãy đóng vai một chuyên gia tạo prompt cho AI (như Midjourney/Flux). "
             f"Hãy dịch ý tưởng sau sang tiếng Anh và viết lại thành một prompt chi tiết, nghệ thuật, "
@@ -146,37 +109,50 @@ async def draw_image(ctx, *, prompt: str):
         print(f"Prompt gốc: {prompt}")
         print(f"Prompt Gemini viết: {english_prompt}")
 
-        # BƯỚC 2: Gửi Prompt sang Pollinations AI để tạo ảnh
+        # BƯỚC 2: Tạo ảnh gốc với Pollinations
         image_url = f"https://image.pollinations.ai/prompt/{english_prompt}?model=flux&width=1024&height=1024&nologo=true"
         
-        # Tải ảnh về
         image_response = requests.get(image_url)
         
         if image_response.status_code == 200:
-            image_data = image_response.content
+            original_image_data = image_response.content
             
-            # BƯỚC 3: UPSCALE ảnh lên 4K
-            await msg.edit(content="🔄 Đang upscale ảnh lên chất lượng 4K Ultra HD... (Quá trình này có thể mất 1-2 phút)")
+            # BƯỚC 3: UPSCALE với Clipdrop
+            await msg.edit(content="🔄 Đang upscale ảnh lên 4K với Clipdrop...")
             
-            upscaled_data = upscale_to_4k(image_data)
+            # Thử upscale thông thường trước
+            upscaled_data = upscale_with_clipdrop(original_image_data)
             
-            # Sử dụng ảnh upscaled nếu thành công, nếu không dùng ảnh gốc
-            final_image_data = upscaled_data if upscaled_data is not None else image_data
-            quality_note = " (4K Ultra HD)" if upscaled_data is not None else " (Chất lượng gốc)"
+            # Nếu không thành công, thử Super Resolution
+            if upscaled_data is None:
+                await msg.edit(content="🔄 Đang thử Super Resolution...")
+                upscaled_data = upscale_with_clipdrop_sr(original_image_data)
             
-            # Gửi ảnh lên Discord - KHÔNG HIỂN THỊ PROMPT
+            # Xác định dữ liệu ảnh cuối cùng
+            if upscaled_data is not None:
+                final_image_data = upscaled_data
+                quality_info = "4K"
+                filename = "art_4k.png"
+            else:
+                final_image_data = original_image_data
+                quality_info = "1024px"
+                filename = "art.png"
+                await ctx.send("⚠️ Upscale thất bại, sử dụng ảnh gốc")
+            
+            # Gửi ảnh lên Discord
             with io.BytesIO(final_image_data) as file:
                 await ctx.send(
-                    content=f"✨ {quality_note}",
-                    file=discord.File(file, filename="art_4k.png")
+                    content=f"✨ **{quality_info}**",
+                    file=discord.File(file, filename=filename)
                 )
-            await msg.delete() # Xóa tin nhắn chờ
+            await msg.delete()
+            
         else:
-            await msg.edit(content="❌ Lỗi khi gọi server vẽ tranh. Vui lòng thử lại.")
+            await msg.edit(content="❌ Lỗi khi tạo ảnh gốc.")
 
     except Exception as e:
         await msg.edit(content=f"❌ Có lỗi xảy ra: {str(e)}")
-        print(e)
+        print(f"Lỗi: {e}")
 
 @bot.command(name="ve_nhanh")
 async def draw_fast(ctx, *, prompt: str):
@@ -196,7 +172,7 @@ async def draw_fast(ctx, *, prompt: str):
         if image_response.status_code == 200:
             with io.BytesIO(image_response.content) as file:
                 await ctx.send(
-                    content=f"✨",  # Chỉ gửi emoji, không có prompt
+                    content=f"✨",
                     file=discord.File(file, filename="art_fast.png")
                 )
             await msg.delete()
@@ -210,7 +186,10 @@ async def draw_fast(ctx, *, prompt: str):
 keep_alive()
 
 # Chạy bot
-if DISCORD_TOKEN and GEMINI_API_KEY:
+if DISCORD_TOKEN and GEMINI_API_KEY and CLIPDROP_API_KEY:
     bot.run(DISCORD_TOKEN)
 else:
     print("Lỗi: Thiếu Token hoặc API Key trong Environment Variables")
+    print(f"Discord Token: {'Có' if DISCORD_TOKEN else 'THIẾU'}")
+    print(f"Gemini Key: {'Có' if GEMINI_API_KEY else 'THIẾU'}")
+    print(f"Clipdrop Key: {'Có' if CLIPDROP_API_KEY else 'THIẾU'}")
