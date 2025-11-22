@@ -12,7 +12,7 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 # Cấu hình Gemini (Dùng bản 1.5 Flash - Miễn phí và nhanh)
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModel('gemini-2.5-flash')
 
 # Cấu hình Bot Discord
 intents = discord.Intents.default()
@@ -78,3 +78,4 @@ if DISCORD_TOKEN and GEMINI_API_KEY:
     bot.run(DISCORD_TOKEN)
 else:
     print("Lỗi: Thiếu Token hoặc API Key trong Environment Variables")
+
