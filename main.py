@@ -21,10 +21,10 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-def upscale_with_superres(image_data):
-    """Sử dụng Super Resolution API miễn phí"""
+def upscale_with_deepai(image_data):
+    """Sử dụng DeepAI Super Resolution API miễn phí"""
     try:
-        # DeepAI Super Resolution API (miễn phí)
+        # DeepAI Super Resolution API (miễn phí với key quickstart)
         headers = {'api-key': 'quickstart-QUdJIGlzIGNvbWluZy4uLi4K'}
         files = {'image': image_data}
         
@@ -46,27 +46,38 @@ def upscale_with_superres(image_data):
         print(f"Lỗi DeepAI: {e}")
     return None
 
-def upscale_with_letsenhance(image_data):
-    """Sử dụng Let's Enhance API miễn phí"""
+def upscale_with_bigjpeg(image_data):
+    """Sử dụng BigJPEG API miễn phí"""
     try:
-        # Let's Enhance free tier
-        url = "https://api.letsenhance.ai/v1/upscale"
-        headers = {
-            "X-API-Key": "letsenhance-free"
-        }
+        # BigJPEG API (miễn phí 20 ảnh/tháng)
+        api_url = "https://api.bigjpg.com/api/task/"
         
-        files = {"image": image_data}
-        response = requests.post(url, files=files, headers=headers, timeout=60)
+        response = requests.post(api_url, json={
+            "style": "art",
+            "noise": "3",
+            "x2": "2",
+            "input": base64.b64encode(image_data).decode()
+        }, headers={"Content-Type": "application/json"}, timeout=30)
         
         if response.status_code == 200:
-            result = response.json()
-            if result.get("output_url"):
-                img_response = requests.get(result["output_url"], timeout=30)
-                if img_response.status_code == 200:
-                    print("✅ Let's Enhance thành công!")
-                    return img_response.content
+            task_data = response.json()
+            task_id = task_data.get("tid")
+            
+            if task_id:
+                for i in range(20):  # Chờ tối đa 20 lần (khoảng 40 giây)
+                    time.sleep(2)
+                    status_response = requests.get(f"{api_url}{task_id}", timeout=10)
+                    if status_response.status_code == 200:
+                        status_data = status_response.json()
+                        if status_data.get("status") == "success":
+                            image_url = status_data.get("url")
+                            if image_url:
+                                img_response = requests.get(image_url, timeout=30)
+                                if img_response.status_code == 200:
+                                    print("✅ BigJPEG thành công!")
+                                    return img_response.content
     except Exception as e:
-        print(f"Lỗi Let's Enhance: {e}")
+        print(f"Lỗi BigJPEG: {e}")
     return None
 
 def upscale_with_waifu2x(image_data):
@@ -97,21 +108,21 @@ def smart_upscale(image_data):
     """Logic upscale thông minh"""
     print("🔄 Bắt đầu upscale ảnh...")
     
-    # Thử Let's Enhance đầu tiên
-    print("🔹 Thử Let's Enhance API...")
-    result = upscale_with_letsenhance(image_data)
-    if result:
-        return result
-    
-    # Thử DeepAI
+    # Thử DeepAI đầu tiên
     print("🔹 Thử DeepAI Super Resolution...")
-    result = upscale_with_superres(image_data)
+    result = upscale_with_deepai(image_data)
     if result:
         return result
     
     # Thử waifu2x
     print("🔹 Thử waifu2x API...")
     result = upscale_with_waifu2x(image_data)
+    if result:
+        return result
+    
+    # Thử BigJPEG
+    print("🔹 Thử BigJPEG API...")
+    result = upscale_with_bigjpeg(image_data)
     if result:
         return result
     
@@ -170,6 +181,11 @@ async def draw_image(ctx, *, prompt: str):
     except Exception as e:
         await msg.edit(content=f"❌ Có lỗi xảy ra: {str(e)}")
         print(f"Lỗi: {e}")
+
+@bot.command(name="test")
+async def test_command(ctx):
+    """Lệnh test bot"""
+    await ctx.send("🤖 Bot đang hoạt động bình thường!")
 
 # Giữ bot sống
 keep_alive()
