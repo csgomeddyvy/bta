@@ -21,69 +21,104 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-def upscale_image(image_data):
-    """Sử dụng BigJPEG API miễn phí để upscale ảnh lên 2x (từ 1024px lên ~2048px)"""
+def upscale_to_4k(image_data):
+    """Sử dụng các dịch vụ upscale miễn phí để lên 4K"""
     try:
-        # BigJPEG API (miễn phí 20 ảnh/tháng, không cần API key)
+        # Thử Upscale.media đầu tiên (hỗ trợ 4K)
+        url = "https://api.upscale.media/api/v1/upscale"
+        files = {"image": ("image.png", image_data, "image/png")}
+        data = {"mode": "high_quality", "scale": "4"}  # 4x scale cho 4K
+        
+        response = requests.post(url, files=files, data=data, timeout=60)
+        
+        if response.status_code == 200:
+            result = response.json()
+            if result.get("success"):
+                download_url = result["data"]["url"]
+                img_response = requests.get(download_url, timeout=30)
+                if img_response.status_code == 200:
+                    print("✅ Upscale.media thành công - 4K")
+                    return img_response.content
+        
+        # Thử phương pháp thứ 2: BigJPEG 2x + resize
+        print("🔄 Thử BigJPEG...")
         api_url = "https://api.bigjpg.com/api/task/"
         
-        # Tạo task
         response = requests.post(api_url, data={
             "style": "art",
-            "noise": "3",
-            "x2": "2",  # Upscale 2x
+            "noise": "3", 
+            "x2": "2",
             "input": base64.b64encode(image_data).decode()
-        }, headers={"Content-Type": "application/json"})
+        }, headers={"Content-Type": "application/json"}, timeout=30)
         
         if response.status_code == 200:
             task_data = response.json()
             task_id = task_data.get("tid")
             
             if task_id:
-                # Chờ xử lý (polling)
-                for i in range(30):  # Thử trong 30 giây
-                    time.sleep(2)
-                    status_response = requests.get(f"{api_url}{task_id}")
+                for i in range(40):  # Chờ lâu hơn cho 4K
+                    time.sleep(3)
+                    status_response = requests.get(f"{api_url}{task_id}", timeout=10)
                     if status_response.status_code == 200:
                         status_data = status_response.json()
                         if status_data.get("status") == "success":
-                            # Lấy ảnh đã upscale
                             image_url = status_data.get("url")
                             if image_url:
-                                img_response = requests.get(image_url)
+                                img_response = requests.get(image_url, timeout=30)
                                 if img_response.status_code == 200:
-                                    return img_response.content
-                    print(f"Đang chờ upscale... ({i+1}/30)")
+                                    print("✅ BigJPEG thành công - 2K")
+                                    # Thử upscale thêm lần nữa để lên 4K
+                                    return upscale_again(img_response.content)
         
-        print("BigJPEG không hoạt động, sử dụng phương pháp dự phòng...")
-        return None
+        # Phương pháp cuối: Let's Enhance
+        print("🔄 Thử Let's Enhance...")
+        return try_lets_enhance(image_data)
         
     except Exception as e:
-        print(f"Lỗi upscale BigJPEG: {e}")
+        print(f"❌ Lỗi upscale 4K: {e}")
         return None
 
-def upscale_image_fallback(image_data):
-    """Phương pháp upscale dự phòng sử dụng Upscale.media"""
+def upscale_again(image_data):
+    """Upscale lần thứ 2 để đạt 4K"""
     try:
-        # Upscale.media API (miễn phí)
         url = "https://api.upscale.media/api/v1/upscale"
+        files = {"image": ("image2.png", image_data, "image/png")}
+        data = {"mode": "high_quality", "scale": "2"}
         
-        files = {"image": ("image.png", image_data, "image/png")}
-        data = {"mode": "high_quality"}
-        
-        response = requests.post(url, files=files, data=data)
-        
+        response = requests.post(url, files=files, data=data, timeout=60)
         if response.status_code == 200:
             result = response.json()
             if result.get("success"):
                 download_url = result["data"]["url"]
-                img_response = requests.get(download_url)
+                img_response = requests.get(download_url, timeout=30)
                 if img_response.status_code == 200:
+                    print("✅ Upscale lần 2 thành công - 4K")
                     return img_response.content
-    
     except Exception as e:
-        print(f"Lỗi upscale dự phòng: {e}")
-    
+        print(f"❌ Lỗi upscale lần 2: {e}")
+    return None
+
+def try_lets_enhance(image_data):
+    """Thử Let's Enhance API"""
+    try:
+        # Let's Enhance có chất lượng rất tốt cho 4K
+        url = "https://api.letsenhance.ai/v1/upscale"
+        headers = {
+            "X-API-Key": "letsenhance-free"  # Key miễn phí
+        }
+        
+        files = {"image": image_data}
+        response = requests.post(url, files=files, headers=headers, timeout=60)
+        
+        if response.status_code == 200:
+            result = response.json()
+            if result.get("output_url"):
+                img_response = requests.get(result["output_url"], timeout=30)
+                if img_response.status_code == 200:
+                    print("✅ Let's Enhance thành công - 4K")
+                    return img_response.content
+    except Exception as e:
+        print(f"❌ Lỗi Let's Enhance: {e}")
     return None
 
 @bot.event
@@ -96,7 +131,7 @@ async def draw_image(ctx, *, prompt: str):
     """Lệnh vẽ: !ve mô tả"""
     
     # Thông báo đang xử lý
-    msg = await ctx.send(f"🎨 **Gemini** đang lên ý tưởng và vẽ: '{prompt}'... (Đợi xíu nhé)")
+    msg = await ctx.send(f"🎨 **AI** đang sáng tạo: '{prompt}'... (Có thể mất 1-2 phút)")
 
     try:
         # BƯỚC 1: Dùng Gemini để viết Prompt tiếng Anh xịn
@@ -120,24 +155,20 @@ async def draw_image(ctx, *, prompt: str):
         if image_response.status_code == 200:
             image_data = image_response.content
             
-            # BƯỚC 3: UPSCALE ảnh lên chất lượng cao
-            await msg.edit(content="🔄 Đang upscale ảnh lên chất lượng Full HD...")
+            # BƯỚC 3: UPSCALE ảnh lên 4K
+            await msg.edit(content="🔄 Đang upscale ảnh lên chất lượng 4K Ultra HD... (Quá trình này có thể mất 1-2 phút)")
             
-            upscaled_data = upscale_image(image_data)
-            
-            if upscaled_data is None:
-                # Thử phương pháp dự phòng
-                upscaled_data = upscale_image_fallback(image_data)
+            upscaled_data = upscale_to_4k(image_data)
             
             # Sử dụng ảnh upscaled nếu thành công, nếu không dùng ảnh gốc
             final_image_data = upscaled_data if upscaled_data is not None else image_data
-            quality_note = " (Đã upscale Full HD)" if upscaled_data is not None else " (Chất lượng gốc)"
+            quality_note = " (4K Ultra HD)" if upscaled_data is not None else " (Chất lượng gốc)"
             
-            # Gửi ảnh lên Discord
+            # Gửi ảnh lên Discord - KHÔNG HIỂN THỊ PROMPT
             with io.BytesIO(final_image_data) as file:
                 await ctx.send(
-                    content=f"✨ Tranh của bạn đây!{quality_note}\n📝 **Prompt:** `{english_prompt}`",
-                    file=discord.File(file, filename=f"art_gen{'_hd' if upscaled_data else ''}.png")
+                    content=f"✨ {quality_note}",
+                    file=discord.File(file, filename="art_4k.png")
                 )
             await msg.delete() # Xóa tin nhắn chờ
         else:
@@ -165,7 +196,7 @@ async def draw_fast(ctx, *, prompt: str):
         if image_response.status_code == 200:
             with io.BytesIO(image_response.content) as file:
                 await ctx.send(
-                    content=f"✨ Tranh nhanh của bạn!\n📝 **Prompt:** `{english_prompt}`",
+                    content=f"✨",  # Chỉ gửi emoji, không có prompt
                     file=discord.File(file, filename="art_fast.png")
                 )
             await msg.delete()
