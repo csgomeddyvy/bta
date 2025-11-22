@@ -2,7 +2,7 @@ import os
 import discord
 from discord.ext import commands
 import google.generativeai as genai
-import requests 
+import requests
 import io
 from keep_alive import keep_alive
 
@@ -11,10 +11,10 @@ DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 # Cấu hình Gemini
-# SỬA ĐỔI: Sử dụng model Gemini 3.0 Pro Preview
-# LƯU Ý QUAN TRỌNG: Model này yêu cầu BẬT THANH TOÁN (BILLING) và có thể yêu cầu quyền truy cập đặc biệt.
+# SỬA ĐỔI: Giữ Gemini 3 Pro Preview để TẠO PROMPT chất lượng cao
+# LƯU Ý: Model này có thể yêu cầu BẬT THANH TOÁN (BILLING) để có quota cho việc tạo prompt.
 genai.configure(api_key=GEMINI_API_KEY)
-generation_model = genai.GenerativeModel('gemini-3-pro-preview') # SỬA ĐỔI: Dùng cho việc tạo prompt và tạo ảnh
+generation_model = genai.GenerativeModel('gemini-3-pro-preview') 
 
 # Cấu hình Bot Discord
 intents = discord.Intents.default()
@@ -23,22 +23,22 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 
 @bot.event
 async def on_ready():
-    print(f'Bot {bot.user} đã sẵn sàng (Đang sử dụng Gemini 3 Pro Preview & Imagen 3 - Yêu cầu Billing)!')
-    await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="!ve + ý tưởng (G3P Mode)"))
+    print(f'Bot {bot.user} đã sẵn sàng (G3P Prompt & Pollinations Image)!')
+    await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="!ve + ý tưởng (G3P Prompt)"))
 
 @bot.command(name="ve")
 async def draw_image(ctx, *, prompt: str):
-    """Lệnh vẽ: !ve mô tả (sử dụng Gemini 3 Pro và Imagen 3)"""
+    """Lệnh vẽ: !ve mô tả"""
     
     # Thông báo đang xử lý
-    msg = await ctx.send(f"🚀 **Gemini 3 Pro** đang lên ý tưởng và tạo ảnh: '{prompt}'... (Đợi xíu nhé)")
+    msg = await ctx.send(f"🚀 **Gemini 3 Pro** đang lên ý tưởng và **Pollinations AI** đang vẽ: '{prompt}'... (Đợi xíu nhé)")
 
     try:
-        # BƯỚC 1: Dùng Gemini 3 Pro để tạo prompt tiếng Anh xịn cho việc tạo ảnh
+        # BƯỚC 1: Dùng Gemini 3 Pro để tạo prompt tiếng Anh xịn
         response_text_prompt = generation_model.generate_content(
-            f"Hãy đóng vai một chuyên gia tạo prompt cho AI (như Midjourney/DALL-E/Imagen). "
+            f"Hãy đóng vai một chuyên gia tạo prompt cho AI (như Midjourney/Flux). "
             f"Hãy dịch ý tưởng sau sang tiếng Anh và viết lại thành một prompt chi tiết, nghệ thuật, "
-            f"tả ánh sáng, phong cách, **luôn thêm các từ khóa chất lượng như 'ultra quality, highly detailed, cinematic lighting, 8K, photorealistic'** vào cuối prompt. "
+            f"tả ánh sáng, phong cách, **luôn thêm các từ khóa chất lượng như 'ultra quality, highly detailed, cinematic lighting, 8K resolution'** vào cuối prompt. "
             f"Chỉ trả về duy nhất đoạn text prompt tiếng Anh, không thêm lời dẫn. "
             f"Nội dung: {prompt}"
         )
@@ -47,46 +47,35 @@ async def draw_image(ctx, *, prompt: str):
         print(f"Prompt gốc: {prompt}")
         print(f"Prompt Gemini 3 Pro tạo: {english_prompt}")
 
-        # BƯỚC 2: Sử dụng Gemini 3 Pro (kết hợp Imagen 3) để tạo ảnh trực tiếp
+        # BƯỚC 2: Gửi Prompt sang Pollinations AI để tạo ảnh (Text-to-Image FREE)
+        # Sử dụng Pollinations AI (Flux) như bản gốc
+        image_url = f"https://image.pollinations.ai/prompt/{english_prompt}?model=flux&width=1024&height=1024&nologo=true"
         
-        image_response = await generation_model.generate_content_async([
-            english_prompt,
-            genai.types.GenerationConfig(
-                temperature=0.7, 
-                max_output_tokens=2048, 
-                response_mime_type="image/jpeg" 
-            )
-        ])
-
-        # Trích xuất dữ liệu ảnh từ phản hồi đa phương thức của Gemini
-        image_data = None
-        if image_response and image_response.candidates:
-            for part in image_response.candidates[0].content.parts:
-                if part.is_image():
-                    # Lấy dữ liệu nhị phân của ảnh
-                    image_data = part.image.data 
-                    break 
+        # Tải ảnh về
+        image_response = requests.get(image_url)
         
-        if image_data:
+        if image_response.status_code == 200:
+            image_data = image_response.content
+            
+            # Gửi ảnh lên Discord
             with io.BytesIO(image_data) as file:
+                # ĐÃ SỬA ĐỔI: Chỉ gửi ảnh và thông báo, loại bỏ hiển thị prompt
                 await ctx.send(
-                    content=f"✨ Tranh của bạn đây! (Được tạo bởi Gemini 3 Pro & Imagen 3)",
-                    file=discord.File(file, filename="gemini_art.png")
+                    content=f"✨ Tranh của bạn đây! (Prompt được tối ưu bởi Gemini 3 Pro)",
+                    file=discord.File(file, filename="art_gen.png")
                 )
             await msg.delete() # Xóa tin nhắn chờ
         else:
-            await msg.edit(content="❌ Không thể tạo ảnh với prompt này hoặc không nhận được dữ liệu ảnh từ Gemini 3 Pro. Vui lòng thử lại.")
+            await msg.edit(content="❌ Lỗi khi gọi server vẽ tranh (Pollinations AI). Vui lòng thử lại.")
 
-    except genai.types.core.ClientError as e:
-        if "RESOURCE_EXHAUSTED" in str(e) or "PERMISSION_DENIED" in str(e):
-            await msg.edit(content=f"❌ **Lỗi: Vui lòng kiểm tra Billing và quyền truy cập API của bạn.**\n"
-                                   f"Để sử dụng Gemini 3 Pro (Preview) và Imagen 3, bạn cần bật thanh toán trên Google AI Studio/Cloud và đảm bảo API Key có đủ quyền. "
+    except Exception as e:
+        # ĐÃ SỬA: Bắt Exception chung và kiểm tra lỗi ResourceExhausted/Billing
+        if "ResourceExhausted" in str(e) or "PERMISSION_DENIED" in str(e):
+             await msg.edit(content=f"❌ **Lỗi Quota (Billing): Vui lòng kiểm tra thanh toán.**\n"
+                                   f"Model Gemini 3 Pro (Preview) không có quota miễn phí cho việc tạo prompt. Vui lòng bật billing, hoặc thay thế bằng 'gemini-2.5-flash'. "
                                    f"Chi tiết lỗi: `{str(e)}`")
         else:
-            await msg.edit(content=f"❌ Có lỗi xảy ra với Gemini API: {str(e)}")
-        print(e)
-    except Exception as e:
-        await msg.edit(content=f"❌ Có lỗi xảy ra: {str(e)}")
+            await msg.edit(content=f"❌ Có lỗi xảy ra: {str(e)}")
         print(e)
 
 # Giữ bot sống
